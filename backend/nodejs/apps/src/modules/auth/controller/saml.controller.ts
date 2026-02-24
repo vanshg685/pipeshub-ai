@@ -6,11 +6,9 @@ import {
 } from '@node-saml/passport-saml';
 import { Response, NextFunction, Request } from 'express';
 import { AuthSessionRequest } from '../middlewares/types';
-import { IamService } from '../services/iam.service';
 import { OrgAuthConfig } from '../schema/orgAuthConfiguration.schema';
 import { Logger } from '../../../libs/services/logger.service';
 import {
-  BadRequestError,
   InternalServerError,
   NotFoundError,
 } from '../../../libs/errors/http.errors';
@@ -21,9 +19,11 @@ import {
 } from '../../../libs/commands/configuration_manager/cm.service.command';
 import { HttpMethod } from '../../../libs/enums/http-methods.enum';
 import { generateFetchConfigAuthToken } from '../utils/generateAuthToken';
-import { iamJwtGenerator } from '../../../libs/utils/createJwt';
 import { AppConfig } from '../../tokens_manager/config/config';
 import { samlSsoCallbackUrl, samlSsoConfigUrl } from '../constants/constants';
+import { Org } from '../../user_management/schema/org.schema';
+import { isValidEmail } from '../routes/saml.routes';
+
 const orgIdToSamlEmailKey: Record<string, string> = {};
 passport.serializeUser((user, done) => {
   done(null, user);
@@ -37,10 +37,66 @@ passport.deserializeUser((obj, done) => {
 @injectable()
 export class SamlController {
   constructor(
-    @inject('IamService') private iamService: IamService,
     @inject('AppConfig') private config: AppConfig,
     @inject('Logger') private logger: Logger,
-  ) {}
+  ) {
+    this.updateSamlStrategiesWithCallback();
+  }
+  async updateSamlStrategiesWithCallback(): Promise<void> {
+
+
+    const org = await Org.findOne({ isDeleted: false }).lean().exec();
+    let user = { orgId: org?._id.toString(), _id: "" };
+    if (!org) {
+      throw new NotFoundError('Organization not found');
+    }
+
+    const configurationManagerCommandOptions: ConfigurationManagerCommandOptions =
+    {
+      uri: `${this.config.cmBackend}/${samlSsoConfigUrl}`,
+      method: HttpMethod.GET,
+      headers: {
+        Authorization: `Bearer ${await generateFetchConfigAuthToken(
+          user,
+          this.config.scopedJwtSecret,
+        )}`,
+        'Content-Type': 'application/json',
+      },
+    };
+
+    const getCredentialsCommand =
+      new ConfigurationManagerServiceCommand(
+        configurationManagerCommandOptions
+      );
+
+
+    const response = await getCredentialsCommand.execute();
+
+    if (response.statusCode !== 200) {
+      throw new InternalServerError(
+        'Error getting saml credentials',
+        response?.data?.error?.message,
+      );
+    }
+    const credentialsData = response.data;
+    if (!credentialsData.certificate) {
+      throw new NotFoundError('Certificate is missing');
+    }
+    if (!credentialsData.entryPoint) {
+      throw new NotFoundError('entryPoint is missing');
+    }
+    if (!credentialsData.emailKey) {
+      throw new NotFoundError('email key is missing');
+    }
+
+    const samlCertificate = credentialsData.certificate;
+    const samlEntryPoint = credentialsData.entryPoint;
+    const samlEmailKey = credentialsData.emailKey;
+
+    this.updateOrgIdToSamlEmailKey(org._id.toString(), samlEmailKey);
+    this.updateSAMLStrategy(samlCertificate, samlEntryPoint);
+  }
+
   // update the mapping
   updateOrgIdToSamlEmailKey(orgId: string, samlEmailKey: string) {
     orgIdToSamlEmailKey[orgId] = samlEmailKey;
@@ -110,69 +166,22 @@ export class SamlController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      const email = req.query.email as string;
+      const email = req.query.email as string || "";
       const sessionToken = req.query.sessionToken as string;
-
-      if (!email) {
-        throw new BadRequestError('Email is required');
-      }
+     
 
       this.logger.debug(email);
-      const authToken = iamJwtGenerator(email, this.config.scopedJwtSecret);
-      let result = await this.iamService.getUserByEmail(email, authToken);
-      if (result.statusCode !== 200) {
-        throw new NotFoundError('User not found');
-      }
-      const user = result.data;
-      const orgId = user.orgId;
+      
       const orgAuthConfig = await OrgAuthConfig.findOne({
-        orgId: user.orgId,
-        // domain,
+        
         isDeleted: false,
-      });
+      }).lean().exec();
 
       if (!orgAuthConfig) {
         throw new NotFoundError('Organisation configuration not found');
       }
-      let configurationManagerCommandOptions: ConfigurationManagerCommandOptions =
-        {
-          uri: `${this.config.cmBackend}/${samlSsoConfigUrl}`,
-          method: HttpMethod.GET,
-          headers: {
-            Authorization: `Bearer ${await generateFetchConfigAuthToken(user, this.config.scopedJwtSecret)}`,
-            'Content-Type': 'application/json',
-          },
-        };
-      const getCredentialsCommand = new ConfigurationManagerServiceCommand(
-        configurationManagerCommandOptions,
-      );
-      let response = await getCredentialsCommand.execute();
-
-      if (response.statusCode !== 200) {
-        throw new InternalServerError(
-          'Error getting saml credentials',
-          response?.data?.error?.message,
-        );
-      }
-      const credentialsData = response.data;
-
-      if (!credentialsData.certificate) {
-        throw new NotFoundError('Certificate is missing');
-      }
-      if (!credentialsData.entryPoint) {
-        throw new NotFoundError('entryPoint is missing');
-      }
-      if (!credentialsData.emailKey) {
-        throw new NotFoundError('email key is missing');
-      }
-
-      const samlCertificate = credentialsData.certificate;
-      const samlEntryPoint = credentialsData.entryPoint;
-      const samlEmailKey = credentialsData.emailKey;
-      this.updateOrgIdToSamlEmailKey(user.orgId, samlEmailKey!);
-      this.updateSAMLStrategy(samlCertificate!, samlEntryPoint!);
-
-      const relayStateObj = { orgId, sessionToken };
+      
+      const relayStateObj = { orgId: orgAuthConfig.orgId, sessionToken };
       const relayStateEncoded = Buffer.from(
         JSON.stringify(relayStateObj),
       ).toString('base64');
@@ -186,4 +195,41 @@ export class SamlController {
       next(error);
     }
   }
+
+
+  parseRelayState = (req: Request) => {
+    const raw = (req.body?.RelayState || req.query?.RelayState) as string;
+    if (!raw) return {};
+    try {
+      return JSON.parse(Buffer.from(raw, "base64").toString("utf8"));
+    } catch {
+      return {};
+    }
+  };
+
+  // Helper: Extract validated email from SAML profile
+  getSamlEmail = (samlUser: any, orgId: string): string | null => {
+    // 1. Try the Organization's configured mapping first
+    const configuredEmailKey = this.getSamlEmailKeyByOrgId(orgId);
+    const primaryEmail = samlUser[configuredEmailKey];
+
+    if (primaryEmail && isValidEmail(primaryEmail)) {
+      return primaryEmail;
+    }
+
+    // 2. Fallback cascade if the configured key is missing or invalid
+    const fallbackKeys = [
+      "email", "mail", "userPrincipalName", "primaryEmail",
+      "contactEmail", "preferred_username", "mailPrimaryAddress", "nameID"
+    ];
+
+    for (const key of fallbackKeys) {
+      const val = samlUser[key];
+      if (val && isValidEmail(val)) {
+        return val;
+      }
+    }
+
+    return null;
+  };
 }
