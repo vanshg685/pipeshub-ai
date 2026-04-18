@@ -18,12 +18,12 @@ import type {
 // ===============================
 
 export const DEFAULT_ONBOARDING_STEPS: OnboardingStep[] = [
-  {
-    id: 'org-profile',
-    title: 'Setup your Organization*',
-    description: 'Name your workspace and add company details',
-    required: true,
-  },
+  // {
+  //   id: 'org-profile',
+  //   title: 'Setup your Organization*',
+  //   description: 'Name your workspace and add company details',
+  //   required: true,
+  // },
   {
     id: 'ai-model',
     title: 'AI Model*',
@@ -110,7 +110,7 @@ const initialState: OnboardingState = {
   isOnboardingActive: false,
 
   steps: DEFAULT_ONBOARDING_STEPS,
-  currentStepId: 'org-profile',
+  currentStepId: 'ai-model',
   completedStepIds: [],
 
   orgDisplayName: '',

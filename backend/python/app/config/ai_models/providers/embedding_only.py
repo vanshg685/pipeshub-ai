@@ -33,6 +33,7 @@ class DefaultEmbeddingProvider:
     .add_field(model_field("e.g., all-MiniLM-L6-v2")) \
     .add_field(EMBEDDING_COMMON_TAIL[0]) \
     .add_field(EMBEDDING_COMMON_TAIL[1]) \
+    .add_field(EMBEDDING_COMMON_TAIL[2]) \
     .build_decorator()
 class SentenceTransformersProvider:
     pass
@@ -51,6 +52,7 @@ class SentenceTransformersProvider:
     .add_field(API_KEY) \
     .add_field(EMBEDDING_COMMON_TAIL[0]) \
     .add_field(EMBEDDING_COMMON_TAIL[1]) \
+    .add_field(EMBEDDING_COMMON_TAIL[2]) \
     .build_decorator()
 class JinaAIProvider:
     pass
@@ -69,6 +71,7 @@ class JinaAIProvider:
     .add_field(API_KEY) \
     .add_field(EMBEDDING_COMMON_TAIL[0]) \
     .add_field(EMBEDDING_COMMON_TAIL[1]) \
+    .add_field(EMBEDDING_COMMON_TAIL[2]) \
     .build_decorator()
 class VoyageProvider:
     pass
@@ -86,6 +89,7 @@ class VoyageProvider:
     .add_field(model_field("e.g., sentence-transformers/all-MiniLM-L6-v2")) \
     .add_field(EMBEDDING_COMMON_TAIL[0]) \
     .add_field(EMBEDDING_COMMON_TAIL[1]) \
+    .add_field(EMBEDDING_COMMON_TAIL[2]) \
     .build_decorator()
 class HuggingFaceProvider:
     pass

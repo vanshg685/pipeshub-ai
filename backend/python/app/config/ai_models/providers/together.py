@@ -31,6 +31,7 @@ _TOGETHER_ENDPOINT = AIModelField(
     .add_field(EMBEDDING_COMMON_TAIL[0], ModelCapability.EMBEDDING) \
     .add_field(_TOGETHER_ENDPOINT, ModelCapability.EMBEDDING) \
     .add_field(EMBEDDING_COMMON_TAIL[1], ModelCapability.EMBEDDING) \
+    .add_field(EMBEDDING_COMMON_TAIL[2], ModelCapability.EMBEDDING) \
     .build_decorator()
 class TogetherProvider:
     pass

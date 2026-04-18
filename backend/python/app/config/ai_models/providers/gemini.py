@@ -27,6 +27,7 @@ from .common_fields import (
     .add_field(model_field("e.g., gemini-embedding-001"), ModelCapability.EMBEDDING) \
     .add_field(EMBEDDING_COMMON_TAIL[0], ModelCapability.EMBEDDING) \
     .add_field(EMBEDDING_COMMON_TAIL[1], ModelCapability.EMBEDDING) \
+    .add_field(EMBEDDING_COMMON_TAIL[2], ModelCapability.EMBEDDING) \
     .build_decorator()
 class GeminiProvider:
     pass

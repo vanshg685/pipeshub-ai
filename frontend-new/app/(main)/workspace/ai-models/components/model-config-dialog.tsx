@@ -1,12 +1,23 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
-import { Box, Button, Dialog, Flex, Text } from '@radix-ui/themes';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Box, Button, Flex, Text } from '@radix-ui/themes';
+import { MaterialIcon } from '@/app/components/ui/MaterialIcon';
+import { WorkspaceRightPanel } from '@/app/(main)/workspace/components/workspace-right-panel';
 import { SchemaFormField } from '@/app/(main)/workspace/connectors/components/schema-form-field';
 import type { SchemaField } from '@/app/(main)/workspace/connectors/types';
 import type { AIModelProvider, AIModelProviderField, ConfiguredModel } from '../types';
 import { CAPABILITY_TO_MODEL_TYPE, CAPABILITY_DISPLAY_NAMES } from '../types';
 import { AIModelsApi } from '../api';
+
+const AI_MODELS_DOCS_URL = 'https://docs.pipeshub.com/ai-models/overview';
+
+const CARD_STYLE: React.CSSProperties = {
+  backgroundColor: 'var(--olive-2)',
+  border: '1px solid var(--olive-3)',
+  borderRadius: 'var(--radius-2)',
+  padding: 'var(--space-4)',
+};
 
 interface ModelConfigDialogProps {
   open: boolean;
@@ -16,6 +27,18 @@ interface ModelConfigDialogProps {
   editModel: ConfiguredModel | null;
   onClose: () => void;
   onSaved: () => void;
+}
+
+const FRIENDLY_FIELD_NAMES = new Set(['modelFriendlyName']);
+const COMPAT_FIELD_NAMES = new Set(['isReasoning', 'isMultimodal']);
+
+function partitionModelFields(fields: AIModelProviderField[]) {
+  const friendly = fields.filter((f) => FRIENDLY_FIELD_NAMES.has(f.name));
+  const compat = fields.filter((f) => COMPAT_FIELD_NAMES.has(f.name));
+  const model = fields.filter(
+    (f) => !FRIENDLY_FIELD_NAMES.has(f.name) && !COMPAT_FIELD_NAMES.has(f.name)
+  );
+  return { friendlyFields: friendly, modelFields: model, compatFields: compat };
 }
 
 export function ModelConfigDialog({
@@ -31,6 +54,16 @@ export function ModelConfigDialog({
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [iconError, setIconError] = useState(false);
+
+  const { friendlyFields, modelFields, compatFields } = useMemo(
+    () => partitionModelFields(fields),
+    [fields]
+  );
+
+  useEffect(() => {
+    setIconError(false);
+  }, [provider?.providerId, open]);
 
   useEffect(() => {
     if (!open || !provider || !capability) {
@@ -131,50 +164,138 @@ export function ModelConfigDialog({
   };
 
   const capLabel = capability ? (CAPABILITY_DISPLAY_NAMES[capability] ?? capability) : '';
+  const title = `${mode === 'add' ? 'Add' : 'Edit'} ${provider?.name ?? ''} ${capLabel}`.trim();
+
+  const documentationAction = (
+    <Button
+      variant="outline"
+      color="gray"
+      size="1"
+      style={{ cursor: 'pointer', gap: 4 }}
+      onClick={() => window.open(AI_MODELS_DOCS_URL, '_blank')}
+    >
+      <MaterialIcon name="open_in_new" size={14} color="var(--slate-11)" />
+      Documentation
+    </Button>
+  );
+
+  const headerIcon =
+    provider && !iconError ? (
+      <Flex
+        align="center"
+        justify="center"
+        style={{ width: 20, height: 20, flexShrink: 0 }}
+      >
+        <img
+          src={provider.iconPath}
+          alt={provider.name}
+          width={16}
+          height={16}
+          onError={() => setIconError(true)}
+          style={{ display: 'block', objectFit: 'contain' }}
+        />
+      </Flex>
+    ) : (
+      <MaterialIcon name="smart_toy" size={20} color="var(--slate-12)" />
+    );
+
+  const renderFieldList = (list: AIModelProviderField[]) =>
+    list.map((field) => (
+      <SchemaFormField
+        key={field.name}
+        field={toSchemaField(field)}
+        value={values[field.name]}
+        onChange={handleFieldChange}
+        disabled={saving}
+      />
+    ));
+
+  const sectionHeading = (label: string) => (
+    <Text size="2" weight="medium" style={{ color: 'var(--slate-12)' }}>
+      {label}
+    </Text>
+  );
 
   return (
-    <Dialog.Root open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <Dialog.Content style={{ maxWidth: 520 }}>
-        <Dialog.Title>
-          {mode === 'add' ? 'Add' : 'Edit'} {provider?.name} {capLabel}
-        </Dialog.Title>
-
-        <Flex direction="column" gap="3" style={{ marginTop: 8 }}>
-          {fields.length === 0 ? (
-            <Text size="2" style={{ color: 'var(--gray-10)', padding: 16 }}>
-              No configuration required for this provider.
+    <WorkspaceRightPanel
+      open={open}
+      onOpenChange={(o) => {
+        if (!o) onClose();
+      }}
+      title={title}
+      icon={headerIcon}
+      headerActions={documentationAction}
+      primaryLabel={mode === 'add' ? 'Add Model' : 'Update Model'}
+      secondaryLabel="Cancel"
+      primaryLoading={saving}
+      onPrimaryClick={() => void handleSave()}
+      onSecondaryClick={onClose}
+    >
+      <Flex direction="column" gap="4">
+        <Box style={CARD_STYLE}>
+          <Flex align="start" gap="2">
+            <MaterialIcon
+              name="info"
+              size={18}
+              color="var(--accent-11)"
+              style={{ flexShrink: 0, marginTop: 1 }}
+            />
+            <Text size="2" style={{ color: 'var(--slate-11)', lineHeight: 1.5 }}>
+              Configure your model to enable AI capabilities. Enter your provider credentials and
+              choose options below. Use a clear instance name where asked—it is shown across
+              Pipeshub when this model is used.
             </Text>
-          ) : (
-            fields.map((field) => (
-              <SchemaFormField
-                key={field.name}
-                field={toSchemaField(field)}
-                value={values[field.name]}
-                onChange={handleFieldChange}
-                disabled={saving}
-              />
-            ))
-          )}
+          </Flex>
+        </Box>
 
-          {error && (
-            <Text size="2" style={{ color: 'var(--red-11)', padding: '4px 0' }}>
-              {error}
-            </Text>
-          )}
-        </Flex>
+        {fields.length === 0 ? (
+          <Text size="2" style={{ color: 'var(--gray-10)', padding: 8 }}>
+            No configuration required for this provider.
+          </Text>
+        ) : (
+          <Flex direction="column" gap="4">
+            {friendlyFields.length > 0 && (
+              <Box style={CARD_STYLE}>
+                <Flex direction="column" gap="3">
+                  {sectionHeading('Model configuration')}
+                  <Flex direction="column" gap="3">
+                    {renderFieldList(friendlyFields)}
+                  </Flex>
+                </Flex>
+              </Box>
+            )}
 
-        <Flex gap="3" justify="end" style={{ marginTop: 16 }}>
-          <Dialog.Close>
-            <Button variant="soft" color="gray" disabled={saving} style={{ cursor: 'pointer' }}>
-              Cancel
-            </Button>
-          </Dialog.Close>
-          <Button onClick={handleSave} disabled={saving} style={{ cursor: 'pointer' }}>
-            {saving ? 'Saving...' : mode === 'add' ? 'Add Model' : 'Update Model'}
-          </Button>
-        </Flex>
-      </Dialog.Content>
-    </Dialog.Root>
+            {modelFields.length > 0 && (
+              <Box style={CARD_STYLE}>
+                <Flex direction="column" gap="3">
+                  {sectionHeading('Model configuration')}
+                  <Flex direction="column" gap="3">
+                    {renderFieldList(modelFields)}
+                  </Flex>
+                </Flex>
+              </Box>
+            )}
+
+            {compatFields.length > 0 && (
+              <Box style={CARD_STYLE}>
+                <Flex direction="column" gap="3">
+                  {sectionHeading('Model compatibilities')}
+                  <Flex direction="column" gap="3">
+                    {renderFieldList(compatFields)}
+                  </Flex>
+                </Flex>
+              </Box>
+            )}
+          </Flex>
+        )}
+
+        {error && (
+          <Text size="2" style={{ color: 'var(--red-11)', padding: '4px 0' }}>
+            {error}
+          </Text>
+        )}
+      </Flex>
+    </WorkspaceRightPanel>
   );
 }
 
@@ -191,7 +312,7 @@ function toSchemaField(field: AIModelProviderField): SchemaField {
     placeholder: field.placeholder,
     description: field.description,
     isSecret: field.isSecret,
-    options: field.options?.map(o => ({ id: o.value, label: o.label })),
+    options: field.options?.map((o) => ({ id: o.value, label: o.label })),
     validation: field.validation as any,
   };
 }

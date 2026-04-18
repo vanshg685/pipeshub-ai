@@ -27,6 +27,7 @@ from .common_fields import (
     .add_field(model_field("e.g., text-embedding-3-small, text-embedding-3-large"), ModelCapability.EMBEDDING) \
     .add_field(EMBEDDING_COMMON_TAIL[0], ModelCapability.EMBEDDING) \
     .add_field(EMBEDDING_COMMON_TAIL[1], ModelCapability.EMBEDDING) \
+    .add_field(EMBEDDING_COMMON_TAIL[2], ModelCapability.EMBEDDING) \
     .build_decorator()
 class OpenAIProvider:
     pass

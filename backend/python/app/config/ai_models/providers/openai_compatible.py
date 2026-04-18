@@ -39,6 +39,7 @@ _COMPAT_ENDPOINT_EMB = AIModelField(
     .add_field(model_field("e.g., text-embedding-3-small"), ModelCapability.EMBEDDING) \
     .add_field(EMBEDDING_COMMON_TAIL[0], ModelCapability.EMBEDDING) \
     .add_field(EMBEDDING_COMMON_TAIL[1], ModelCapability.EMBEDDING) \
+    .add_field(EMBEDDING_COMMON_TAIL[2], ModelCapability.EMBEDDING) \
     .build_decorator()
 class OpenAICompatibleProvider:
     pass

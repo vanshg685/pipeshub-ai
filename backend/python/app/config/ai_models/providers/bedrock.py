@@ -39,6 +39,7 @@ from .common_fields import (
     .add_field(BEDROCK_PROVIDER_EMBEDDING, ModelCapability.EMBEDDING) \
     .add_field(CUSTOM_PROVIDER, ModelCapability.EMBEDDING) \
     .add_field(EMBEDDING_COMMON_TAIL[1], ModelCapability.EMBEDDING) \
+    .add_field(EMBEDDING_COMMON_TAIL[2], ModelCapability.EMBEDDING) \
     .build_decorator()
 class BedrockProvider:
     pass

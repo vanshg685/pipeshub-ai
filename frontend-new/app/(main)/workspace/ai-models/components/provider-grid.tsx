@@ -4,7 +4,7 @@ import React, { useMemo } from 'react';
 import { Flex, Grid, Heading, SegmentedControl, Text, TextField } from '@radix-ui/themes';
 import { MaterialIcon } from '@/app/components/ui/MaterialIcon';
 import type { AIModelProvider, ConfiguredModel } from '../types';
-import { CAPABILITY_TO_MODEL_TYPE, CAPABILITY_DISPLAY_NAMES } from '../types';
+import { CAPABILITY_TO_MODEL_TYPE } from '../types';
 import { ProviderCard } from './provider-card';
 
 type FilterTab = 'all' | 'configured' | 'not_configured';
@@ -21,6 +21,16 @@ interface ProviderGridProps {
   onSetDefault: (modelType: string, modelKey: string) => void;
   onDelete: (modelType: string, modelKey: string, modelName: string) => void;
   isLoading?: boolean;
+  /** When false, hide title + subtitle; search field remains (aligned end). */
+  showHeader?: boolean;
+  /** Smaller padding for embedded contexts (e.g. onboarding). */
+  compactPadding?: boolean;
+  /** Passed to each ProviderCard to limit visible capability UI. */
+  visibleCapabilities?: string[];
+  /** When true, render only the provider card grid (no title, search, or tabs). */
+  cardsOnly?: boolean;
+  /** When true, provider cards hide capability badges and related labels (onboarding). */
+  hideCapabilities?: boolean;
 }
 
 const TABS: { value: FilterTab; label: string }[] = [
@@ -41,6 +51,11 @@ export function ProviderGrid({
   onSetDefault,
   onDelete,
   isLoading = false,
+  showHeader = true,
+  compactPadding = false,
+  visibleCapabilities,
+  cardsOnly = false,
+  hideCapabilities = false,
 }: ProviderGridProps) {
   const allModels = useMemo(() => {
     const flat: ConfiguredModel[] = [];
@@ -57,6 +72,7 @@ export function ProviderGrid({
     for (const p of providers) {
       let count = 0;
       for (const cap of p.capabilities) {
+        if (visibleCapabilities?.length && !visibleCapabilities.includes(cap)) continue;
         const mt = CAPABILITY_TO_MODEL_TYPE[cap];
         if (!mt) continue;
         count += (configuredModels[mt] ?? []).filter(
@@ -66,7 +82,7 @@ export function ProviderGrid({
       counts[p.providerId] = count;
     }
     return counts;
-  }, [providers, configuredModels]);
+  }, [providers, configuredModels, visibleCapabilities]);
 
   const tabFiltered = useMemo(() => {
     switch (activeTab) {
@@ -90,6 +106,11 @@ export function ProviderGrid({
     );
   }, [tabFiltered, searchQuery]);
 
+  const listForGrid = useMemo(() => {
+    if (cardsOnly) return providers;
+    return filtered;
+  }, [cardsOnly, providers, filtered]);
+
   const tabCounts = useMemo(() => {
     const applySearch = (list: AIModelProvider[]) => {
       if (!searchQuery.trim()) return list;
@@ -109,71 +130,92 @@ export function ProviderGrid({
     };
   }, [providers, searchQuery, providerConfiguredCount]);
 
+  const outerPadding = compactPadding
+    ? { paddingTop: 0, paddingBottom: 0, paddingLeft: 0, paddingRight: 0 }
+    : { paddingTop: 64, paddingBottom: 64, paddingLeft: 100, paddingRight: 100 };
+
   return (
     <Flex
       direction="column"
-      gap="5"
+      gap={cardsOnly ? '0' : '5'}
       style={{
         width: '100%',
         height: '100%',
-        paddingTop: 64,
-        paddingBottom: 64,
-        paddingLeft: 100,
-        paddingRight: 100,
+        ...outerPadding,
         overflowY: 'auto',
       }}
     >
-      {/* Header */}
-      <Flex justify="between" align="start" gap="2" style={{ width: '100%' }}>
-        <Flex direction="column" gap="2" style={{ flex: 1 }}>
-          <Heading size="5" weight="medium" style={{ color: 'var(--gray-12)' }}>
-            AI Models
-          </Heading>
-          <Text size="2" style={{ color: 'var(--gray-11)' }}>
-            Configure AI model providers for text generation, embeddings, and more
-          </Text>
-        </Flex>
+      {!cardsOnly && (
+        <>
+          {/* Header + search, or search only */}
+          {showHeader ? (
+            <Flex justify="between" align="start" gap="2" style={{ width: '100%' }}>
+              <Flex direction="column" gap="2" style={{ flex: 1 }}>
+                <Heading size="5" weight="medium" style={{ color: 'var(--gray-12)' }}>
+                  AI Models
+                </Heading>
+                <Text size="2" style={{ color: 'var(--gray-11)' }}>
+                  Configure AI model providers for text generation, embeddings, and more
+                </Text>
+              </Flex>
 
-        <TextField.Root
-          size="2"
-          placeholder="Search..."
-          value={searchQuery}
-          onChange={(e) => onSearchChange(e.target.value)}
-          style={{ width: 224, flexShrink: 0 }}
-        >
-          <TextField.Slot>
-            <MaterialIcon name="search" size={16} color="var(--gray-9)" />
-          </TextField.Slot>
-        </TextField.Root>
-      </Flex>
+              <TextField.Root
+                size="2"
+                placeholder="Search..."
+                value={searchQuery}
+                onChange={(e) => onSearchChange(e.target.value)}
+                style={{ width: 224, flexShrink: 0 }}
+              >
+                <TextField.Slot>
+                  <MaterialIcon name="search" size={16} color="var(--gray-9)" />
+                </TextField.Slot>
+              </TextField.Root>
+            </Flex>
+          ) : (
+            <Flex justify="end" align="center" style={{ width: '100%' }}>
+              <TextField.Root
+                size="2"
+                placeholder="Search..."
+                value={searchQuery}
+                onChange={(e) => onSearchChange(e.target.value)}
+                style={{ width: 224, flexShrink: 0 }}
+              >
+                <TextField.Slot>
+                  <MaterialIcon name="search" size={16} color="var(--gray-9)" />
+                </TextField.Slot>
+              </TextField.Root>
+            </Flex>
+          )}
 
-      {/* Tabs */}
-      <Flex align="center" justify="between" style={{ width: '100%' }}>
-        <SegmentedControl.Root
-          value={activeTab}
-          onValueChange={(v) => onTabChange(v as FilterTab)}
-          size="2"
-        >
-          {TABS.map((tab) => (
-            <SegmentedControl.Item key={tab.value} value={tab.value}>
-              {tab.label} ({tabCounts[tab.value] ?? 0})
-            </SegmentedControl.Item>
-          ))}
-        </SegmentedControl.Root>
-      </Flex>
+          {/* Tabs */}
+          <Flex align="center" justify="between" style={{ width: '100%' }}>
+            <SegmentedControl.Root
+              value={activeTab}
+              onValueChange={(v) => onTabChange(v as FilterTab)}
+              size="2"
+            >
+              {TABS.map((tab) => (
+                <SegmentedControl.Item key={tab.value} value={tab.value}>
+                  {tab.label} ({tabCounts[tab.value] ?? 0})
+                </SegmentedControl.Item>
+              ))}
+            </SegmentedControl.Root>
+          </Flex>
+        </>
+      )}
 
       {/* Grid */}
       {isLoading ? (
-        <Flex align="center" justify="center" style={{ width: '100%', paddingTop: 80 }}>
+        <Flex align="center" justify="center" style={{ width: '100%', paddingTop: cardsOnly ? 24 : 80 }}>
           <Text size="2" style={{ color: 'var(--gray-9)' }}>Loading providers…</Text>
         </Flex>
-      ) : filtered.length === 0 ? (
+      ) : listForGrid.length === 0 ? (
         <Flex
           direction="column"
           align="center"
           justify="center"
           gap="2"
-          style={{ width: '100%', paddingTop: 80 }}
+          style={{ width: '100%', paddingTop: cardsOnly ? 24 : 80 }}
         >
           <MaterialIcon name="smart_toy" size={48} color="var(--gray-9)" />
           <Text size="2" style={{ color: 'var(--gray-11)' }}>
@@ -182,11 +224,13 @@ export function ProviderGrid({
         </Flex>
       ) : (
         <Grid columns={{ initial: '2', md: '3', lg: '3' }} gap="4" style={{ width: '100%' }}>
-          {filtered.map((provider) => (
+          {listForGrid.map((provider) => (
             <ProviderCard
               key={provider.providerId}
               provider={provider}
               configuredModels={allModels}
+              visibleCapabilities={visibleCapabilities}
+              hideCapabilities={hideCapabilities}
               onAdd={onAdd}
               onEdit={onEdit}
               onSetDefault={onSetDefault}

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Flex, Text } from '@radix-ui/themes';
 import { MaterialIcon } from '@/app/components/ui/MaterialIcon';
 import type { AIModelProvider, ConfiguredModel } from '../types';
@@ -9,6 +9,10 @@ import { CAPABILITY_DISPLAY_NAMES, CAPABILITY_TO_MODEL_TYPE } from '../types';
 interface ProviderCardProps {
   provider: AIModelProvider;
   configuredModels: ConfiguredModel[];
+  /** When set, only these capabilities are shown (badges, rows, setup). Must be subset of provider capabilities with known model types. */
+  visibleCapabilities?: string[];
+  /** When true, hide capability badges, per-row capability pills, and capability names on add buttons (e.g. single-type onboarding). */
+  hideCapabilities?: boolean;
   onAdd: (provider: AIModelProvider, capability: string) => void;
   onEdit: (provider: AIModelProvider, capability: string, model: ConfiguredModel) => void;
   onSetDefault: (modelType: string, modelKey: string) => void;
@@ -18,6 +22,8 @@ interface ProviderCardProps {
 export function ProviderCard({
   provider,
   configuredModels,
+  visibleCapabilities,
+  hideCapabilities = false,
   onAdd,
   onEdit,
   onSetDefault,
@@ -25,8 +31,16 @@ export function ProviderCard({
 }: ProviderCardProps) {
   const [isHovered, setIsHovered] = useState(false);
 
+  const effectiveCapabilities = useMemo(() => {
+    return provider.capabilities.filter((cap) => {
+      if (!CAPABILITY_TO_MODEL_TYPE[cap]) return false;
+      if (!visibleCapabilities?.length) return true;
+      return visibleCapabilities.includes(cap);
+    });
+  }, [provider.capabilities, visibleCapabilities]);
+
   const modelsByCapability: Record<string, ConfiguredModel[]> = {};
-  for (const cap of provider.capabilities) {
+  for (const cap of effectiveCapabilities) {
     const mt = CAPABILITY_TO_MODEL_TYPE[cap];
     if (!mt) continue;
     modelsByCapability[cap] = configuredModels.filter(
@@ -70,7 +84,6 @@ export function ProviderCard({
               flexShrink: 0,
             }}
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={provider.iconPath}
               alt={provider.name}
@@ -131,53 +144,61 @@ export function ProviderCard({
           </Text>
         </Flex>
 
-        {/* Capability badges */}
-        <Flex gap="2" wrap="wrap">
-          {provider.capabilities.map((cap) => {
-            const label = CAPABILITY_DISPLAY_NAMES[cap];
-            if (!label) return null;
-            const count = modelsByCapability[cap]?.length ?? 0;
-            return (
-              <Flex
-                key={cap}
-                align="center"
-                gap="1"
-                style={{
-                  padding: '2px 8px',
-                  borderRadius: 'var(--radius-1)',
-                  backgroundColor: count > 0 ? 'var(--green-a3)' : 'var(--gray-a3)',
-                  flexShrink: 0,
-                }}
-              >
-                <Text
-                  size="1"
-                  weight="medium"
+        {!hideCapabilities && (
+          <Flex gap="2" wrap="wrap">
+            {effectiveCapabilities.map((cap) => {
+              const label = CAPABILITY_DISPLAY_NAMES[cap];
+              if (!label) return null;
+              const count = modelsByCapability[cap]?.length ?? 0;
+              return (
+                <Flex
+                  key={cap}
+                  align="center"
+                  gap="1"
                   style={{
-                    color: count > 0 ? 'var(--green-a11)' : 'var(--gray-11)',
-                    whiteSpace: 'nowrap',
-                    fontSize: 11,
+                    padding: '2px 8px',
+                    borderRadius: 'var(--radius-1)',
+                    backgroundColor: count > 0 ? 'var(--green-a3)' : 'var(--gray-a3)',
+                    flexShrink: 0,
                   }}
                 >
-                  {label}{count > 0 ? ` (${count})` : ''}
-                </Text>
-              </Flex>
-            );
-          })}
-        </Flex>
+                  <Text
+                    size="1"
+                    weight="medium"
+                    style={{
+                      color: count > 0 ? 'var(--green-a11)' : 'var(--gray-11)',
+                      whiteSpace: 'nowrap',
+                      fontSize: 11,
+                    }}
+                  >
+                    {label}{count > 0 ? ` (${count})` : ''}
+                  </Text>
+                </Flex>
+              );
+            })}
+          </Flex>
+        )}
       </Flex>
 
       {/* Bottom: configured instances OR setup buttons */}
       {isConfigured ? (
         <ConfiguredSection
           provider={provider}
+          capabilities={effectiveCapabilities}
           modelsByCapability={modelsByCapability}
+          hideCapabilities={hideCapabilities}
           onAdd={onAdd}
           onEdit={onEdit}
           onSetDefault={onSetDefault}
           onDelete={onDelete}
         />
       ) : (
-        <SetupButtons provider={provider} onAdd={onAdd} />
+        <SetupButtons
+          provider={provider}
+          capabilities={effectiveCapabilities}
+          hideCapabilities={hideCapabilities}
+          onAdd={onAdd}
+        />
       )}
     </Flex>
   );
@@ -189,14 +210,18 @@ export function ProviderCard({
 
 function ConfiguredSection({
   provider,
+  capabilities,
   modelsByCapability,
+  hideCapabilities,
   onAdd,
   onEdit,
   onSetDefault,
   onDelete,
 }: {
   provider: AIModelProvider;
+  capabilities: string[];
   modelsByCapability: Record<string, ConfiguredModel[]>;
+  hideCapabilities: boolean;
   onAdd: (p: AIModelProvider, cap: string) => void;
   onEdit: (p: AIModelProvider, cap: string, m: ConfiguredModel) => void;
   onSetDefault: (mt: string, mk: string) => void;
@@ -205,11 +230,11 @@ function ConfiguredSection({
   return (
     <Flex direction="column" gap="2" style={{ width: '100%' }}>
       {/* Model instances — always visible */}
-      {provider.capabilities.map((cap) => {
+      {capabilities.map((cap) => {
         const mt = CAPABILITY_TO_MODEL_TYPE[cap];
         const models = modelsByCapability[cap] ?? [];
         if (models.length === 0) return null;
-        const capLabel = CAPABILITY_DISPLAY_NAMES[cap] ?? cap;
+        const capLabel = hideCapabilities ? undefined : (CAPABILITY_DISPLAY_NAMES[cap] ?? cap);
 
         return (
           <Flex key={cap} direction="column" gap="1">
@@ -246,13 +271,14 @@ function ConfiguredSection({
 
       {/* Add more buttons per capability */}
       <Flex gap="2" style={{ width: '100%', marginTop: 2 }}>
-        {provider.capabilities.map((cap) => {
+        {capabilities.map((cap) => {
           const label = CAPABILITY_DISPLAY_NAMES[cap];
           if (!label) return null;
+          const btnLabel = hideCapabilities ? '+ Add model' : `+ ${label}`;
           return (
             <SetupButton
               key={cap}
-              label={`+ ${label}`}
+              label={btnLabel}
               onClick={() => onAdd(provider, cap)}
               flex
             />
@@ -269,26 +295,32 @@ function ConfiguredSection({
 
 function SetupButtons({
   provider,
+  capabilities,
+  hideCapabilities,
   onAdd,
 }: {
   provider: AIModelProvider;
+  capabilities: string[];
+  hideCapabilities: boolean;
   onAdd: (p: AIModelProvider, cap: string) => void;
 }) {
-  if (provider.capabilities.length === 1) {
-    const cap = provider.capabilities[0];
+  if (capabilities.length === 1) {
+    const cap = capabilities[0];
     const label = CAPABILITY_DISPLAY_NAMES[cap] ?? cap;
-    return <SetupButton label={`+ ${label}`} onClick={() => onAdd(provider, cap)} />;
+    const btnLabel = hideCapabilities ? '+ Add model' : `+ ${label}`;
+    return <SetupButton label={btnLabel} onClick={() => onAdd(provider, cap)} />;
   }
 
   return (
     <Flex gap="2" style={{ width: '100%' }}>
-      {provider.capabilities.map((cap) => {
+      {capabilities.map((cap) => {
         const label = CAPABILITY_DISPLAY_NAMES[cap];
         if (!label) return null;
+        const btnLabel = hideCapabilities ? '+ Add model' : `+ ${label}`;
         return (
           <SetupButton
             key={cap}
-            label={`+ ${label}`}
+            label={btnLabel}
             onClick={() => onAdd(provider, cap)}
             flex
           />
@@ -365,7 +397,7 @@ function ModelRow({
   onDelete,
 }: {
   modelName: string;
-  capLabel: string;
+  capLabel?: string;
   isDefault: boolean;
   onEdit: (e: React.MouseEvent) => void;
   onSetDefault: (e: React.MouseEvent) => void;
@@ -400,19 +432,21 @@ function ModelRow({
         >
           {modelName}
         </Text>
-        <Text
-          size="1"
-          style={{
-            color: 'var(--gray-9)',
-            flexShrink: 0,
-            fontSize: 10,
-            backgroundColor: 'var(--gray-a3)',
-            padding: '0 4px',
-            borderRadius: 'var(--radius-1)',
-          }}
-        >
-          {capLabel}
-        </Text>
+        {capLabel ? (
+          <Text
+            size="1"
+            style={{
+              color: 'var(--gray-9)',
+              flexShrink: 0,
+              fontSize: 10,
+              backgroundColor: 'var(--gray-a3)',
+              padding: '0 4px',
+              borderRadius: 'var(--radius-1)',
+            }}
+          >
+            {capLabel}
+          </Text>
+        ) : null}
         {isDefault && (
           <Text
             size="1"
