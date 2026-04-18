@@ -4,24 +4,24 @@ import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 import type { AIModelProvider, ConfiguredModel } from './types';
+import type { CapabilitySection } from './types';
 
 // ========================================
 // State
 // ========================================
 
-type FilterTab = 'all' | 'configured' | 'not_configured';
+export type MainSection = 'providers' | 'configured';
 
 interface AIModelsState {
   providers: AIModelProvider[];
   configuredModels: Record<string, ConfiguredModel[]>;
-  capabilities: string[];
 
   isLoadingProviders: boolean;
   isLoadingModels: boolean;
 
   searchQuery: string;
-  filterTab: FilterTab;
-  selectedCapability: string | null;
+  mainSection: MainSection;
+  capabilitySection: CapabilitySection;
 
   dialogOpen: boolean;
   dialogMode: 'add' | 'edit';
@@ -40,14 +40,13 @@ interface AIModelsState {
 interface AIModelsActions {
   setProviders: (providers: AIModelProvider[]) => void;
   setConfiguredModels: (models: Record<string, ConfiguredModel[]>) => void;
-  setCapabilities: (caps: string[]) => void;
 
   setLoadingProviders: (loading: boolean) => void;
   setLoadingModels: (loading: boolean) => void;
 
   setSearchQuery: (query: string) => void;
-  setFilterTab: (tab: FilterTab) => void;
-  setSelectedCapability: (cap: string | null) => void;
+  setMainSection: (section: MainSection) => void;
+  setCapabilitySection: (section: CapabilitySection) => void;
 
   openAddDialog: (provider: AIModelProvider, capability: string) => void;
   openEditDialog: (provider: AIModelProvider, capability: string, model: ConfiguredModel) => void;
@@ -66,12 +65,11 @@ interface AIModelsActions {
 const initialState: AIModelsState = {
   providers: [],
   configuredModels: {},
-  capabilities: [],
   isLoadingProviders: true,
   isLoadingModels: true,
   searchQuery: '',
-  filterTab: 'all' as FilterTab,
-  selectedCapability: null,
+  mainSection: 'providers',
+  capabilitySection: 'text_generation',
   dialogOpen: false,
   dialogMode: 'add',
   dialogProvider: null,
@@ -98,10 +96,6 @@ export const useAIModelsStore = create<AIModelsState & AIModelsActions>()(
         set((s) => {
           s.configuredModels = models;
         }),
-      setCapabilities: (caps) =>
-        set((s) => {
-          s.capabilities = caps;
-        }),
 
       setLoadingProviders: (loading) =>
         set((s) => {
@@ -116,13 +110,13 @@ export const useAIModelsStore = create<AIModelsState & AIModelsActions>()(
         set((s) => {
           s.searchQuery = query;
         }),
-      setFilterTab: (tab) =>
+      setMainSection: (section) =>
         set((s) => {
-          s.filterTab = tab;
+          s.mainSection = section;
         }),
-      setSelectedCapability: (cap) =>
+      setCapabilitySection: (section) =>
         set((s) => {
-          s.selectedCapability = cap;
+          s.capabilitySection = section;
         }),
 
       openAddDialog: (provider, capability) =>

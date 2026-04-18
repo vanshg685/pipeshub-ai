@@ -1,83 +1,90 @@
 'use client';
 
 import React, { useCallback, useEffect } from 'react';
-import { Button, Dialog, Flex, Text } from '@radix-ui/themes';
+import { Box, Button, Dialog, Flex } from '@radix-ui/themes';
+import { useTranslation } from 'react-i18next';
 import { useToastStore } from '@/lib/store/toast-store';
 import { useAIModelsStore } from './store';
 import { AIModelsApi } from './api';
 import type { AIModelProvider, ConfiguredModel } from './types';
 import { ProviderGrid, ModelConfigDialog } from './components';
+import deleteFooterStyles from './delete-dialog-footer.module.css';
 
 export default function AIModelsPage() {
+  const { t } = useTranslation();
   const store = useAIModelsStore();
   const { addToast } = useToastStore();
 
   const loadProviders = useCallback(async () => {
-    store.setLoadingProviders(true);
+    const s = useAIModelsStore.getState();
+    s.setLoadingProviders(true);
     try {
       const data = await AIModelsApi.getRegistry();
-      store.setProviders(data.providers);
+      s.setProviders(data.providers);
     } catch {
-      addToast({ title: 'Failed to load AI model providers', variant: 'error' });
+      addToast({ title: t('workspace.aiModels.toastLoadProvidersError'), variant: 'error' });
     } finally {
-      store.setLoadingProviders(false);
+      s.setLoadingProviders(false);
     }
-  }, []);
+  }, [addToast, t]);
 
   const loadModels = useCallback(async () => {
-    store.setLoadingModels(true);
+    const s = useAIModelsStore.getState();
+    s.setLoadingModels(true);
     try {
       const data = await AIModelsApi.getAllModels();
-      store.setConfiguredModels(data.models as unknown as Record<string, ConfiguredModel[]>);
+      s.setConfiguredModels(data.models as unknown as Record<string, ConfiguredModel[]>);
     } catch {
-      addToast({ title: 'Failed to load configured models', variant: 'error' });
+      addToast({ title: t('workspace.aiModels.toastLoadModelsError'), variant: 'error' });
     } finally {
-      store.setLoadingModels(false);
+      s.setLoadingModels(false);
     }
-  }, []);
+  }, [addToast, t]);
 
   useEffect(() => {
-    loadProviders();
-    loadModels();
-    return () => store.reset();
+    void loadProviders();
+    void loadModels();
+    return () => useAIModelsStore.getState().reset();
+  }, [loadProviders, loadModels]);
+
+  const handleRefresh = useCallback(() => {
+    void loadProviders();
+    void loadModels();
+  }, [loadProviders, loadModels]);
+
+  const handleAdd = useCallback((provider: AIModelProvider, capability: string) => {
+    useAIModelsStore.getState().openAddDialog(provider, capability);
   }, []);
 
-  const handleAdd = useCallback(
-    (provider: AIModelProvider, capability: string) => {
-      store.openAddDialog(provider, capability);
-    },
-    []
-  );
-
-  const handleEdit = useCallback(
-    (provider: AIModelProvider, capability: string, model: ConfiguredModel) => {
-      store.openEditDialog(provider, capability, model);
-    },
-    []
-  );
-
-  const handleSetDefault = useCallback(async (modelType: string, modelKey: string) => {
-    try {
-      await AIModelsApi.setDefault(modelType, modelKey);
-      addToast({ title: 'Default model updated', variant: 'success' });
-      loadModels();
-    } catch {
-      addToast({ title: 'Failed to set default model', variant: 'error' });
-    }
+  const handleEdit = useCallback((provider: AIModelProvider, capability: string, model: ConfiguredModel) => {
+    useAIModelsStore.getState().openEditDialog(provider, capability, model);
   }, []);
+
+  const handleSetDefault = useCallback(
+    async (modelType: string, modelKey: string) => {
+      try {
+        await AIModelsApi.setDefault(modelType, modelKey);
+        addToast({ title: t('workspace.aiModels.toastDefaultUpdated'), variant: 'success' });
+        await loadModels();
+      } catch {
+        addToast({ title: t('workspace.aiModels.toastDefaultError'), variant: 'error' });
+      }
+    },
+    [addToast, loadModels, t]
+  );
 
   const handleDelete = useCallback(async () => {
-    const target = store.deleteTarget;
+    const target = useAIModelsStore.getState().deleteTarget;
     if (!target) return;
     try {
       await AIModelsApi.deleteProvider(target.modelType, target.modelKey);
-      addToast({ title: `Deleted ${target.modelName}`, variant: 'success' });
-      store.closeDeleteDialog();
-      loadModels();
+      addToast({ title: t('workspace.aiModels.toastDeleted', { name: target.modelName }), variant: 'success' });
+      useAIModelsStore.getState().closeDeleteDialog();
+      await loadModels();
     } catch {
-      addToast({ title: 'Failed to delete model', variant: 'error' });
+      addToast({ title: t('workspace.aiModels.toastDeleteError'), variant: 'error' });
     }
-  }, [store.deleteTarget]);
+  }, [addToast, loadModels, t]);
 
   const isLoading = store.isLoadingProviders || store.isLoadingModels;
 
@@ -88,13 +95,16 @@ export default function AIModelsPage() {
         configuredModels={store.configuredModels}
         searchQuery={store.searchQuery}
         onSearchChange={store.setSearchQuery}
-        activeTab={store.filterTab}
-        onTabChange={store.setFilterTab}
+        mainSection={store.mainSection}
+        onMainSectionChange={store.setMainSection}
+        capabilitySection={store.capabilitySection}
+        onCapabilitySectionChange={store.setCapabilitySection}
         onAdd={handleAdd}
         onEdit={handleEdit}
         onSetDefault={handleSetDefault}
         onDelete={(mt, mk, name) => store.openDeleteDialog(mt, mk, name)}
         isLoading={isLoading}
+        onRefresh={handleRefresh}
       />
 
       <ModelConfigDialog
@@ -109,23 +119,47 @@ export default function AIModelsPage() {
 
       <Dialog.Root
         open={store.deleteDialogOpen}
-        onOpenChange={(o) => { if (!o) store.closeDeleteDialog(); }}
+        onOpenChange={(o) => {
+          if (!o) store.closeDeleteDialog();
+        }}
       >
         <Dialog.Content style={{ maxWidth: 400 }}>
-          <Dialog.Title>Delete Model</Dialog.Title>
+          <Dialog.Title>{t('workspace.aiModels.deleteDialogTitle')}</Dialog.Title>
           <Dialog.Description size="2" style={{ color: 'var(--gray-11)' }}>
-            Are you sure you want to delete &ldquo;{store.deleteTarget?.modelName}&rdquo;? This
-            action cannot be undone.
+            {t('workspace.aiModels.deleteDialogDescription', {
+              name: store.deleteTarget?.modelName ?? '',
+            })}
           </Dialog.Description>
-          <Flex gap="3" justify="end" style={{ marginTop: 16 }}>
-            <Dialog.Close>
-              <Button variant="soft" color="gray" style={{ cursor: 'pointer' }}>
-                Cancel
+          <Flex
+            direction={{ initial: 'column', sm: 'row' }}
+            align={{ initial: 'stretch', sm: 'center' }}
+            gap="3"
+            wrap="wrap"
+            justify={{ initial: 'start', sm: 'end' }}
+            style={{ marginTop: 16, width: '100%' }}
+          >
+            <Box width={{ initial: '100%', sm: 'auto' }} style={{ minWidth: 0 }}>
+              <Dialog.Close>
+                <Button
+                  variant="soft"
+                  color="gray"
+                  className={deleteFooterStyles.footerButton}
+                  style={{ cursor: 'pointer' }}
+                >
+                  {t('workspace.aiModels.cancel')}
+                </Button>
+              </Dialog.Close>
+            </Box>
+            <Box width={{ initial: '100%', sm: 'auto' }} style={{ minWidth: 0 }}>
+              <Button
+                color="red"
+                className={deleteFooterStyles.footerButton}
+                onClick={handleDelete}
+                style={{ cursor: 'pointer' }}
+              >
+                {t('workspace.aiModels.delete')}
               </Button>
-            </Dialog.Close>
-            <Button color="red" onClick={handleDelete} style={{ cursor: 'pointer' }}>
-              Delete
-            </Button>
+            </Box>
           </Flex>
         </Dialog.Content>
       </Dialog.Root>

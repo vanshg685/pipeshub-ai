@@ -1,23 +1,76 @@
 'use client';
 
+import type { TFunction } from 'i18next';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Box, Button, Flex, Text } from '@radix-ui/themes';
+import { Box, Button, Callout, Flex, Switch, Text } from '@radix-ui/themes';
+import { useTranslation } from 'react-i18next';
 import { MaterialIcon } from '@/app/components/ui/MaterialIcon';
+import { ThemeableAssetIcon } from '@/app/components/ui/themeable-asset-icon';
 import { WorkspaceRightPanel } from '@/app/(main)/workspace/components/workspace-right-panel';
 import { SchemaFormField } from '@/app/(main)/workspace/connectors/components/schema-form-field';
 import type { SchemaField } from '@/app/(main)/workspace/connectors/types';
+import { EXTERNAL_LINKS } from '@/lib/constants/external-links';
+import { aiModelsCapabilityLabel } from '../capability-i18n';
 import type { AIModelProvider, AIModelProviderField, ConfiguredModel } from '../types';
-import { CAPABILITY_TO_MODEL_TYPE, CAPABILITY_DISPLAY_NAMES } from '../types';
+import { CAPABILITY_TO_MODEL_TYPE } from '../types';
 import { AIModelsApi } from '../api';
 
-const AI_MODELS_DOCS_URL = 'https://docs.pipeshub.com/ai-models/overview';
+const COMPAT_FIELD_NAMES = ['isReasoning', 'isMultimodal'] as const;
+
+const READONLY_ROW_STYLE: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  minHeight: 32,
+  paddingLeft: 10,
+  paddingRight: 10,
+  backgroundColor: 'var(--color-surface)',
+  border: '1px solid var(--gray-a5)',
+  borderRadius: 'var(--radius-2)',
+  fontSize: 14,
+  color: 'var(--gray-12)',
+};
 
 const CARD_STYLE: React.CSSProperties = {
-  backgroundColor: 'var(--olive-2)',
-  border: '1px solid var(--olive-3)',
-  borderRadius: 'var(--radius-2)',
-  padding: 'var(--space-4)',
+  backgroundColor: 'var(--gray-2)',
+  border: '1px solid var(--gray-a5)',
+  borderRadius: 'var(--radius-3)',
+  padding: 16,
 };
+
+function isFieldValueSatisfied(field: AIModelProviderField, value: unknown): boolean {
+  if (!field.required) return true;
+  const t = field.fieldType;
+  if (t === 'BOOLEAN' || t === 'CHECKBOX') return true;
+  if (t === 'NUMBER') {
+    if (value === '' || value === undefined || value === null) return false;
+    const n = Number(value);
+    return !Number.isNaN(n);
+  }
+  if (t === 'SELECT') {
+    return String(value ?? '').trim() !== '';
+  }
+  return String(value ?? '').trim() !== '';
+}
+
+function allRequiredFieldsValid(fields: AIModelProviderField[], values: Record<string, unknown>): boolean {
+  return fields.every((f) => isFieldValueSatisfied(f, values[f.name]));
+}
+
+function compatIcon(fieldName: string): string {
+  if (fieldName === 'isReasoning') return 'lightbulb';
+  if (fieldName === 'isMultimodal') return 'image';
+  return 'tune';
+}
+
+function fieldStartAdornment(fieldName: string): React.ReactNode | undefined {
+  if (fieldName === 'apiKey') {
+    return <MaterialIcon name="key" size={16} color="var(--gray-10)" />;
+  }
+  if (fieldName === 'model' || fieldName === 'contextLength') {
+    return <MaterialIcon name="widgets" size={16} color="var(--gray-10)" />;
+  }
+  return undefined;
+}
 
 interface ModelConfigDialogProps {
   open: boolean;
@@ -29,18 +82,6 @@ interface ModelConfigDialogProps {
   onSaved: () => void;
 }
 
-const FRIENDLY_FIELD_NAMES = new Set(['modelFriendlyName']);
-const COMPAT_FIELD_NAMES = new Set(['isReasoning', 'isMultimodal']);
-
-function partitionModelFields(fields: AIModelProviderField[]) {
-  const friendly = fields.filter((f) => FRIENDLY_FIELD_NAMES.has(f.name));
-  const compat = fields.filter((f) => COMPAT_FIELD_NAMES.has(f.name));
-  const model = fields.filter(
-    (f) => !FRIENDLY_FIELD_NAMES.has(f.name) && !COMPAT_FIELD_NAMES.has(f.name)
-  );
-  return { friendlyFields: friendly, modelFields: model, compatFields: compat };
-}
-
 export function ModelConfigDialog({
   open,
   mode,
@@ -50,20 +91,11 @@ export function ModelConfigDialog({
   onClose,
   onSaved,
 }: ModelConfigDialogProps) {
+  const { t } = useTranslation();
   const [fields, setFields] = useState<AIModelProviderField[]>([]);
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [iconError, setIconError] = useState(false);
-
-  const { friendlyFields, modelFields, compatFields } = useMemo(
-    () => partitionModelFields(fields),
-    [fields]
-  );
-
-  useEffect(() => {
-    setIconError(false);
-  }, [provider?.providerId, open]);
 
   useEffect(() => {
     if (!open || !provider || !capability) {
@@ -115,8 +147,15 @@ export function ModelConfigDialog({
     setSaving(true);
 
     try {
-      const modelType = CAPABILITY_TO_MODEL_TYPE[capability];
-      if (!modelType) throw new Error(`Unknown capability: ${capability}`);
+      const modelTypeFromCapability = CAPABILITY_TO_MODEL_TYPE[capability];
+      const modelType =
+        mode === 'edit' && editModel
+          ? editModel.modelType
+          : modelTypeFromCapability;
+
+      if (!modelType) {
+        throw new Error(`Unknown capability: ${capability}`);
+      }
 
       const topLevelKeys = ['isMultimodal', 'isReasoning', 'contextLength'];
       const configuration: Record<string, unknown> = {};
@@ -151,69 +190,67 @@ export function ModelConfigDialog({
 
       onSaved();
       onClose();
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { error?: { message?: string }; message?: string } }; message?: string };
       const msg =
-        err?.response?.data?.error?.message ??
-        err?.response?.data?.message ??
-        err?.message ??
-        'Failed to save model configuration';
+        e?.response?.data?.error?.message ??
+        e?.response?.data?.message ??
+        e?.message ??
+        t('workspace.aiModels.configSaveErrorFallback');
       setError(msg);
     } finally {
       setSaving(false);
     }
   };
 
-  const capLabel = capability ? (CAPABILITY_DISPLAY_NAMES[capability] ?? capability) : '';
-  const title = `${mode === 'add' ? 'Add' : 'Edit'} ${provider?.name ?? ''} ${capLabel}`.trim();
+  const capLabel = capability ? aiModelsCapabilityLabel(t, capability) : '';
 
-  const documentationAction = (
-    <Button
-      variant="outline"
-      color="gray"
-      size="1"
-      style={{ cursor: 'pointer', gap: 4 }}
-      onClick={() => window.open(AI_MODELS_DOCS_URL, '_blank')}
-    >
-      <MaterialIcon name="open_in_new" size={14} color="var(--slate-11)" />
-      Documentation
-    </Button>
+  const headerTitle = useMemo(() => {
+    const name = provider?.name ?? '';
+    if (mode === 'add') {
+      return t('workspace.aiModels.configPanelTitleAdd', { provider: name, capability: capLabel }).trim();
+    }
+    return t('workspace.aiModels.configPanelTitleEdit', { provider: name, capability: capLabel }).trim();
+  }, [mode, provider?.name, capLabel, t]);
+
+  const headerIcon = useMemo(() => {
+    if (!provider?.iconPath) return undefined;
+    return (
+      <span style={{ display: 'inline-flex', borderRadius: 4, overflow: 'hidden', lineHeight: 0 }}>
+        <ThemeableAssetIcon
+          src={provider.iconPath}
+          size={22}
+          color="var(--gray-12)"
+          variant="flat"
+        />
+      </span>
+    );
+  }, [provider?.iconPath]);
+
+  const formValid = useMemo(
+    () => (fields.length === 0 ? true : allRequiredFieldsValid(fields, values)),
+    [fields, values]
   );
 
-  const headerIcon =
-    provider && !iconError ? (
-      <Flex
-        align="center"
-        justify="center"
-        style={{ width: 20, height: 20, flexShrink: 0 }}
+  const primaryBlocked = saving || !provider || !capability || !formValid;
+
+  const headerActions = useMemo(
+    () => (
+      <Button
+        type="button"
+        variant="ghost"
+        color="gray"
+        size="2"
+        aria-label={t('workspace.aiModels.configDocsOpenLabel')}
+        style={{ cursor: 'pointer', gap: 6 }}
+        onClick={() =>
+          window.open(`${EXTERNAL_LINKS.documentation}ai-models/overview`, '_blank', 'noopener,noreferrer')
+        }
       >
-        <img
-          src={provider.iconPath}
-          alt={provider.name}
-          width={16}
-          height={16}
-          onError={() => setIconError(true)}
-          style={{ display: 'block', objectFit: 'contain' }}
-        />
-      </Flex>
-    ) : (
-      <MaterialIcon name="smart_toy" size={20} color="var(--slate-12)" />
-    );
-
-  const renderFieldList = (list: AIModelProviderField[]) =>
-    list.map((field) => (
-      <SchemaFormField
-        key={field.name}
-        field={toSchemaField(field)}
-        value={values[field.name]}
-        onChange={handleFieldChange}
-        disabled={saving}
-      />
-    ));
-
-  const sectionHeading = (label: string) => (
-    <Text size="2" weight="medium" style={{ color: 'var(--slate-12)' }}>
-      {label}
-    </Text>
+        <MaterialIcon name="open_in_new" size={16} color="var(--gray-11)" />
+      </Button>
+    ),
+    [t]
   );
 
   return (
@@ -222,97 +259,241 @@ export function ModelConfigDialog({
       onOpenChange={(o) => {
         if (!o) onClose();
       }}
-      title={title}
+      title={headerTitle}
       icon={headerIcon}
-      headerActions={documentationAction}
-      primaryLabel={mode === 'add' ? 'Add Model' : 'Update Model'}
-      secondaryLabel="Cancel"
+      headerActions={headerActions}
+      primaryLabel={mode === 'add' ? t('workspace.aiModels.configAddModel') : t('workspace.aiModels.configUpdateModel')}
+      secondaryLabel={t('workspace.aiModels.cancel')}
       primaryLoading={saving}
-      onPrimaryClick={() => void handleSave()}
+      primaryDisabled={primaryBlocked}
+      primaryTooltip={
+        !formValid && !saving && Boolean(provider) && Boolean(capability)
+          ? t('workspace.aiModels.configFillRequiredTooltip')
+          : undefined
+      }
+      onPrimaryClick={() => {
+        void handleSave();
+      }}
       onSecondaryClick={onClose}
     >
-      <Flex direction="column" gap="4">
-        <Box style={CARD_STYLE}>
-          <Flex align="start" gap="2">
-            <MaterialIcon
-              name="info"
-              size={18}
-              color="var(--accent-11)"
-              style={{ flexShrink: 0, marginTop: 1 }}
-            />
-            <Text size="2" style={{ color: 'var(--slate-11)', lineHeight: 1.5 }}>
-              Configure your model to enable AI capabilities. Enter your provider credentials and
-              choose options below. Use a clear instance name where asked—it is shown across
-              Pipeshub when this model is used.
-            </Text>
-          </Flex>
-        </Box>
+      <ModelConfigFormBody
+        provider={provider}
+        capability={capability}
+        capLabel={capLabel}
+        fields={fields}
+        values={values}
+        saving={saving}
+        error={error}
+        onFieldChange={handleFieldChange}
+      />
+    </WorkspaceRightPanel>
+  );
+}
 
-        {fields.length === 0 ? (
-          <Text size="2" style={{ color: 'var(--gray-10)', padding: 8 }}>
-            No configuration required for this provider.
-          </Text>
-        ) : (
-          <Flex direction="column" gap="4">
-            {friendlyFields.length > 0 && (
-              <Box style={CARD_STYLE}>
-                <Flex direction="column" gap="3">
-                  {sectionHeading('Model configuration')}
-                  <Flex direction="column" gap="3">
-                    {renderFieldList(friendlyFields)}
-                  </Flex>
-                </Flex>
-              </Box>
-            )}
+function resolveConfigInfoMessage(
+  t: TFunction,
+  capability: string | null,
+  providerName: string,
+  capLabel: string
+): string {
+  if (!capability) {
+    return t('workspace.aiModels.configInfoNoCapability', { providerName });
+  }
+  if (capability === 'text_generation') {
+    return t('workspace.aiModels.configInfoTextGeneration', { providerName });
+  }
+  if (capability === 'embedding') {
+    return t('workspace.aiModels.configInfoEmbedding', { providerName });
+  }
+  if (capability === 'image_generation') {
+    return t('workspace.aiModels.configInfoImageGeneration', { providerName });
+  }
+  return t('workspace.aiModels.configInfoFallback', { capLabel, providerName });
+}
 
-            {modelFields.length > 0 && (
-              <Box style={CARD_STYLE}>
-                <Flex direction="column" gap="3">
-                  {sectionHeading('Model configuration')}
-                  <Flex direction="column" gap="3">
-                    {renderFieldList(modelFields)}
-                  </Flex>
-                </Flex>
-              </Box>
-            )}
+function ModelConfigFormBody({
+  provider,
+  capability,
+  capLabel,
+  fields,
+  values,
+  saving,
+  error,
+  onFieldChange,
+}: {
+  provider: AIModelProvider | null;
+  capability: string | null;
+  capLabel: string;
+  fields: AIModelProviderField[];
+  values: Record<string, unknown>;
+  saving: boolean;
+  error: string | null;
+  onFieldChange: (name: string, value: unknown) => void;
+}) {
+  const { t } = useTranslation();
+  const instanceField = useMemo(
+    () => fields.find((f) => f.name === 'modelFriendlyName') ?? null,
+    [fields]
+  );
 
-            {compatFields.length > 0 && (
-              <Box style={CARD_STYLE}>
-                <Flex direction="column" gap="3">
-                  {sectionHeading('Model compatibilities')}
-                  <Flex direction="column" gap="3">
-                    {renderFieldList(compatFields)}
-                  </Flex>
-                </Flex>
-              </Box>
-            )}
-          </Flex>
-        )}
+  const compatFields = useMemo(() => {
+    return COMPAT_FIELD_NAMES.map((name) => fields.find((f) => f.name === name)).filter(
+      (f): f is AIModelProviderField => Boolean(f)
+    );
+  }, [fields]);
 
+  const modelConfigFields = useMemo(
+    () =>
+      fields.filter(
+        (f) =>
+          f.name !== 'modelFriendlyName' &&
+          f.name !== 'isReasoning' &&
+          f.name !== 'isMultimodal'
+      ),
+    [fields]
+  );
+
+  const section1Title = t('workspace.aiModels.configSectionCapabilityConfig', { capability: capLabel });
+
+  if (fields.length === 0) {
+    return (
+      <Flex direction="column" gap="3">
+        <Text size="2" style={{ color: 'var(--gray-10)', padding: 8 }}>
+          {t('workspace.aiModels.configNoConfigRequired')}
+        </Text>
         {error && (
           <Text size="2" style={{ color: 'var(--red-11)', padding: '4px 0' }}>
             {error}
           </Text>
         )}
       </Flex>
-    </WorkspaceRightPanel>
+    );
+  }
+
+  const providerName =
+    provider?.name ?? t('workspace.aiModels.configInfoPlaceholderProvider');
+  const infoMessage =
+    provider && capability
+      ? resolveConfigInfoMessage(t, capability, provider.name, capLabel)
+      : resolveConfigInfoMessage(t, null, providerName, capLabel);
+
+  const boolValue = (v: unknown) =>
+    typeof v === 'boolean' ? v : v === 'true' ? true : v === 'false' ? false : Boolean(v);
+
+  return (
+    <Flex direction="column" gap="4">
+      <Box style={CARD_STYLE}>
+        <Flex direction="column" gap="3">
+          <Text size="3" weight="medium" style={{ color: 'var(--gray-12)' }}>
+            {section1Title}
+          </Text>
+          <Callout.Root color="green" size="1" variant="surface">
+            <Callout.Text>
+              <Text size="2" style={{ color: 'var(--gray-12)' }}>
+                {infoMessage}
+              </Text>
+            </Callout.Text>
+          </Callout.Root>
+          {instanceField ? (
+            <SchemaFormField
+              field={toSchemaField(instanceField)}
+              value={values[instanceField.name]}
+              onChange={onFieldChange}
+              disabled={saving}
+              startAdornment={fieldStartAdornment(instanceField.name)}
+            />
+          ) : null}
+        </Flex>
+      </Box>
+
+      <Box style={CARD_STYLE}>
+        <Flex direction="column" gap="3">
+          <Text size="3" weight="medium" style={{ color: 'var(--gray-12)' }}>
+            {t('workspace.aiModels.configSectionModelConfiguration')}
+          </Text>
+          {provider ? (
+            <Flex direction="column" gap="1">
+              <Text size="2" weight="medium" style={{ color: 'var(--slate-12)' }}>
+                {t('workspace.aiModels.configProviderType')}
+              </Text>
+              <Box style={READONLY_ROW_STYLE}>
+                <Text size="2">{t('workspace.aiModels.configProviderApiRow', { name: provider.name })}</Text>
+              </Box>
+            </Flex>
+          ) : null}
+          {modelConfigFields.map((field) => (
+            <SchemaFormField
+              key={field.name}
+              field={toSchemaField(field)}
+              value={values[field.name]}
+              onChange={onFieldChange}
+              disabled={saving}
+              startAdornment={fieldStartAdornment(field.name)}
+            />
+          ))}
+        </Flex>
+      </Box>
+
+      {compatFields.length > 0 ? (
+        <Box style={CARD_STYLE}>
+          <Flex direction="column" gap="3">
+            <Text size="3" weight="medium" style={{ color: 'var(--gray-12)' }}>
+              {t('workspace.aiModels.configSectionCompatibilities')}
+            </Text>
+            <Flex direction="column" gap="2">
+              {compatFields.map((field) => (
+                <Flex
+                  key={field.name}
+                  align="center"
+                  justify="between"
+                  gap="3"
+                  style={{ minHeight: 44, paddingTop: 4, paddingBottom: 4 }}
+                >
+                  <Flex align="center" gap="3" style={{ minWidth: 0, flex: 1 }}>
+                    <MaterialIcon name={compatIcon(field.name)} size={20} color="var(--gray-11)" />
+                    <Flex direction="column" gap="1" style={{ minWidth: 0 }}>
+                      <Text size="2" weight="medium" style={{ color: 'var(--gray-12)' }}>
+                        {field.displayName}
+                      </Text>
+                      {field.description ? (
+                        <Text size="1" style={{ color: 'var(--gray-10)' }}>
+                          {field.description}
+                        </Text>
+                      ) : null}
+                    </Flex>
+                  </Flex>
+                  <Switch
+                    checked={boolValue(values[field.name])}
+                    onCheckedChange={(checked) => onFieldChange(field.name, checked)}
+                    disabled={saving}
+                  />
+                </Flex>
+              ))}
+            </Flex>
+          </Flex>
+        </Box>
+      ) : null}
+
+      {error && (
+        <Text size="2" style={{ color: 'var(--red-11)', padding: '4px 0' }}>
+          {error}
+        </Text>
+      )}
+    </Flex>
   );
 }
 
-/**
- * Convert our registry field type to the SchemaField shape expected by SchemaFormField.
- */
 function toSchemaField(field: AIModelProviderField): SchemaField {
   return {
     name: field.name,
     displayName: field.displayName,
-    fieldType: field.fieldType as any,
+    fieldType: field.fieldType,
     required: field.required,
     defaultValue: field.defaultValue,
     placeholder: field.placeholder,
     description: field.description,
     isSecret: field.isSecret,
     options: field.options?.map((o) => ({ id: o.value, label: o.label })),
-    validation: field.validation as any,
-  };
+    validation: field.validation,
+  } as unknown as SchemaField;
 }

@@ -1,3 +1,4 @@
 export { ProviderGrid } from './provider-grid';
-export { ProviderCard } from './provider-card';
+export { ProviderRow } from './provider-card';
+export { ConfiguredModelsGrid } from './configured-models-grid';
 export { ModelConfigDialog } from './model-config-dialog';

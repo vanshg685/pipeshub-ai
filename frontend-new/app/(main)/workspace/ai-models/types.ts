@@ -74,6 +74,7 @@ export interface AllModelsResponse {
     llm: ConfiguredModel[];
     reasoning: ConfiguredModel[];
     multiModal: ConfiguredModel[];
+    imageGeneration?: ConfiguredModel[];
   };
   message: string;
 }
@@ -103,13 +104,38 @@ export const MODEL_TYPE_TO_CAPABILITY: Record<string, string> = Object.fromEntri
   Object.entries(CAPABILITY_TO_MODEL_TYPE).map(([k, v]) => [v, k])
 );
 
-export const CAPABILITY_DISPLAY_NAMES: Record<string, string> = {
-  text_generation: 'LLM',
-  embedding: 'Embedding',
-  ocr: 'OCR',
-  reasoning: 'Reasoning',
-  image_generation: 'Image Generation',
-  tts: 'Text to Speech',
-  stt: 'Speech to Text',
-  video: 'Video',
-};
+/** Primary capability tabs on the AI Models page (registry + configured filtering). */
+export type CapabilitySection = 'text_generation' | 'embedding' | 'image_generation';
+
+/** Order of primary capability section tabs; labels come from i18n. */
+export const CAPABILITY_SECTION_ORDER: CapabilitySection[] = [
+  'text_generation',
+  'embedding',
+  // 'image_generation',
+];
+
+/** Model API buckets shown under the "For LLMs" tab. */
+export const LLM_SECTION_MODEL_TYPES = ['llm', 'reasoning', 'multiModal', 'slm'] as const;
+
+/** Map configured `modelType` to registry capability key for schema / edit dialog. */
+export function registryCapabilityForModelType(modelType: string): string {
+  const fromMap = MODEL_TYPE_TO_CAPABILITY[modelType];
+  if (fromMap) return fromMap;
+  if (modelType === 'multiModal' || modelType === 'slm') return 'text_generation';
+  return 'text_generation';
+}
+
+/** Registry capability keys that show a badge on provider rows; badge text from i18n. */
+export const REGISTRY_BADGE_CAPABILITY_KEYS = [
+  'text_generation',
+  'reasoning',
+  'video',
+  'image_generation',
+  'embedding',
+] as const;
+
+export type RegistryBadgeCapabilityKey = (typeof REGISTRY_BADGE_CAPABILITY_KEYS)[number];
+
+export function isRegistryBadgeCapability(cap: string): cap is RegistryBadgeCapabilityKey {
+  return (REGISTRY_BADGE_CAPABILITY_KEYS as readonly string[]).includes(cap);
+}

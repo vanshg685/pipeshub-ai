@@ -5,11 +5,10 @@ import { Flex, Box, Text, Button, Dialog } from '@radix-ui/themes';
 import { useOnboardingStore } from '../store';
 import { useToastStore } from '@/lib/store/toast-store';
 import { AIModelsApi } from '@/app/(main)/workspace/ai-models/api';
-import type { AIModelProvider, ConfiguredModel } from '@/app/(main)/workspace/ai-models/types';
+import type { AIModelProvider, ConfiguredModel, CapabilitySection } from '@/app/(main)/workspace/ai-models/types';
+import type { MainSection } from '@/app/(main)/workspace/ai-models/store';
 import { ProviderGrid, ModelConfigDialog } from '@/app/(main)/workspace/ai-models/components';
 import type { OnboardingStepId } from '../types';
-
-type FilterTab = 'all' | 'configured' | 'not_configured';
 
 interface StepEmbeddingModelProps {
   onSuccess: (nextStep: OnboardingStepId | null) => void;
@@ -27,7 +26,8 @@ export function StepEmbeddingModel({
   const [providers, setProviders] = useState<AIModelProvider[]>([]);
   const [configuredModels, setConfiguredModels] = useState<Record<string, ConfiguredModel[]>>({});
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState<FilterTab>('all');
+  const [mainSection, setMainSection] = useState<MainSection>('providers');
+  const [capabilitySection, setCapabilitySection] = useState<CapabilitySection>('embedding');
   const [loadingProviders, setLoadingProviders] = useState(true);
   const [loadingModels, setLoadingModels] = useState(true);
   const [modelsLoaded, setModelsLoaded] = useState(false);
@@ -147,6 +147,11 @@ export function StepEmbeddingModel({
     }
   }, [deleteTarget, addToast, closeDeleteDialog, loadModels]);
 
+  const handleRefresh = useCallback(() => {
+    void loadProviders();
+    void loadModels();
+  }, [loadProviders, loadModels]);
+
   const isLoading = loadingProviders || loadingModels;
   const embedCount = configuredModels.embedding?.length ?? 0;
 
@@ -183,7 +188,7 @@ export function StepEmbeddingModel({
           </Text>
         </Box>
 
-        <Box className="no-scrollbar" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '24px' }}>
+        <Box style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '24px' }}>
           <Flex direction="column" gap="5">
             {!isLoading && embedCount === 0 && (
               <Text size="2" style={{ color: 'var(--gray-11)', display: 'block' }}>
@@ -191,22 +196,21 @@ export function StepEmbeddingModel({
               </Text>
             )}
             <ProviderGrid
+              layout="embedded"
               providers={providers}
               configuredModels={configuredModels}
               searchQuery={searchQuery}
               onSearchChange={setSearchQuery}
-              activeTab={activeTab}
-              onTabChange={setActiveTab}
+              mainSection={mainSection}
+              onMainSectionChange={setMainSection}
+              capabilitySection={capabilitySection}
+              onCapabilitySectionChange={setCapabilitySection}
               onAdd={handleAdd}
               onEdit={handleEdit}
               onSetDefault={handleSetDefault}
               onDelete={openDeleteDialog}
               isLoading={isLoading}
-              showHeader={false}
-              compactPadding
-              visibleCapabilities={['embedding']}
-              hideCapabilities
-              cardsOnly
+              onRefresh={handleRefresh}
             />
           </Flex>
         </Box>

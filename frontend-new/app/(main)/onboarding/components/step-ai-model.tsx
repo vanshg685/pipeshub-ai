@@ -5,7 +5,8 @@ import { Box, Button, Dialog, Flex, Text } from '@radix-ui/themes';
 import { useToastStore } from '@/lib/store/toast-store';
 import { useOnboardingStore } from '../store';
 import { AIModelsApi } from '@/app/(main)/workspace/ai-models/api';
-import type { AIModelProvider, ConfiguredModel } from '@/app/(main)/workspace/ai-models/types';
+import type { AIModelProvider, ConfiguredModel, CapabilitySection } from '@/app/(main)/workspace/ai-models/types';
+import type { MainSection } from '@/app/(main)/workspace/ai-models/store';
 import { ProviderGrid, ModelConfigDialog } from '@/app/(main)/workspace/ai-models/components';
 import type { OnboardingStepId } from '../types';
 
@@ -15,7 +16,7 @@ interface StepAiModelProps {
   totalSystemSteps: number;
 }
 
-export function StepAiModel(_props: StepAiModelProps) {
+export function StepAiModel({ systemStepIndex, totalSystemSteps }: StepAiModelProps) {
   const { markStepCompleted, unmarkStepCompleted } = useOnboardingStore();
   const { addToast } = useToastStore();
 
@@ -37,6 +38,10 @@ export function StepAiModel(_props: StepAiModelProps) {
     modelKey: string;
     modelName: string;
   } | null>(null);
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [mainSection, setMainSection] = useState<MainSection>('providers');
+  const [capabilitySection, setCapabilitySection] = useState<CapabilitySection>('text_generation');
 
   const loadProviders = useCallback(async () => {
     setLoadingProviders(true);
@@ -140,6 +145,11 @@ export function StepAiModel(_props: StepAiModelProps) {
     }
   }, [deleteTarget, addToast, closeDeleteDialog, loadModels]);
 
+  const handleRefresh = useCallback(() => {
+    void loadProviders();
+    void loadModels();
+  }, [loadProviders, loadModels]);
+
   const isLoading = loadingProviders || loadingModels;
   const llmCount = configuredModels.llm?.length ?? 0;
 
@@ -157,29 +167,49 @@ export function StepAiModel(_props: StepAiModelProps) {
           overflow: 'hidden',
         }}
       >
-        <Box className="no-scrollbar" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 20px 20px' }}>
+
+        <Box
+          style={{
+            flexShrink: 0,
+            padding: '24px 24px 16px',
+            borderBottom: '1px solid var(--gray-4)',
+          }}
+        >
+          <Text
+            as="div"
+            size="1"
+            style={{ color: 'var(--gray-9)', marginBottom: '4px', letterSpacing: '0.02em' }}
+          >
+            System Configuration
+          </Text>
+          <Text as="div" size="4" weight="bold" style={{ color: 'var(--gray-12)' }}>
+            Step {systemStepIndex}/{totalSystemSteps}: Configure AI Model*
+          </Text>
+        </Box>
+
+        
+        <Box style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 20px 20px' }}>
           {!isLoading && llmCount === 0 && (
             <Text size="2" style={{ color: 'var(--gray-11)', marginBottom: '12px', display: 'block' }}>
               Add at least one text (LLM) provider to continue.
             </Text>
           )}
           <ProviderGrid
+            layout="embedded"
             providers={providers}
             configuredModels={configuredModels}
-            searchQuery=""
-            onSearchChange={() => {}}
-            activeTab="all"
-            onTabChange={() => {}}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            mainSection={mainSection}
+            onMainSectionChange={setMainSection}
+            capabilitySection={capabilitySection}
+            onCapabilitySectionChange={setCapabilitySection}
             onAdd={handleAdd}
             onEdit={handleEdit}
             onSetDefault={handleSetDefault}
             onDelete={openDeleteDialog}
             isLoading={isLoading}
-            showHeader={false}
-            compactPadding
-            visibleCapabilities={['text_generation']}
-            hideCapabilities
-            cardsOnly
+            onRefresh={handleRefresh}
           />
         </Box>
       </Box>

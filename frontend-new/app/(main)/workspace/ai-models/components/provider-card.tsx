@@ -1,517 +1,174 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { Flex, Text } from '@radix-ui/themes';
 import { MaterialIcon } from '@/app/components/ui/MaterialIcon';
-import type { AIModelProvider, ConfiguredModel } from '../types';
-import { CAPABILITY_DISPLAY_NAMES, CAPABILITY_TO_MODEL_TYPE } from '../types';
+import { ThemeableAssetIcon } from '@/app/components/ui/themeable-asset-icon';
+import { useTranslation } from 'react-i18next';
+import type { AIModelProvider } from '../types';
+import { isRegistryBadgeCapability } from '../types';
+import { aiModelsCapabilityBadge } from '../capability-i18n';
+import styles from './provider-card.module.css';
 
-interface ProviderCardProps {
+const BADGE_STYLE: Record<
+  string,
+  { border: string; color: string; bg: string }
+> = {
+  text_generation: {
+    border: '1px solid var(--purple-9)',
+    color: 'var(--purple-11)',
+    bg: 'color-mix(in srgb, var(--purple-3) 40%, transparent)',
+  },
+  reasoning: {
+    border: '1px solid var(--orange-9)',
+    color: 'var(--orange-11)',
+    bg: 'color-mix(in srgb, var(--orange-3) 40%, transparent)',
+  },
+  video: {
+    border: '1px solid var(--cyan-9)',
+    color: 'var(--cyan-11)',
+    bg: 'color-mix(in srgb, var(--cyan-3) 40%, transparent)',
+  },
+  embedding: {
+    border: '1px solid var(--blue-9)',
+    color: 'var(--blue-11)',
+    bg: 'color-mix(in srgb, var(--blue-3) 40%, transparent)',
+  },
+  image_generation: {
+    border: '1px solid var(--pink-9)',
+    color: 'var(--pink-11)',
+    bg: 'color-mix(in srgb, var(--pink-3) 40%, transparent)',
+  },
+};
+
+const DEFAULT_BADGE_STYLE = {
+  border: '1px solid var(--gray-8)',
+  color: 'var(--gray-11)',
+  bg: 'var(--gray-a3)',
+};
+
+interface ProviderRowProps {
   provider: AIModelProvider;
-  configuredModels: ConfiguredModel[];
-  /** When set, only these capabilities are shown (badges, rows, setup). Must be subset of provider capabilities with known model types. */
-  visibleCapabilities?: string[];
-  /** When true, hide capability badges, per-row capability pills, and capability names on add buttons (e.g. single-type onboarding). */
-  hideCapabilities?: boolean;
-  onAdd: (provider: AIModelProvider, capability: string) => void;
-  onEdit: (provider: AIModelProvider, capability: string, model: ConfiguredModel) => void;
-  onSetDefault: (modelType: string, modelKey: string) => void;
-  onDelete: (modelType: string, modelKey: string, modelName: string) => void;
+  onConfigure: () => void;
 }
 
-export function ProviderCard({
-  provider,
-  configuredModels,
-  visibleCapabilities,
-  hideCapabilities = false,
-  onAdd,
-  onEdit,
-  onSetDefault,
-  onDelete,
-}: ProviderCardProps) {
-  const [isHovered, setIsHovered] = useState(false);
+/**
+ * Horizontal provider row for the Model Providers grid (+ Configure uses active capability tab).
+ */
+export function ProviderRow({ provider, onConfigure }: ProviderRowProps) {
+  const { t } = useTranslation();
+  const [hover, setHover] = useState(false);
 
-  const effectiveCapabilities = useMemo(() => {
-    return provider.capabilities.filter((cap) => {
-      if (!CAPABILITY_TO_MODEL_TYPE[cap]) return false;
-      if (!visibleCapabilities?.length) return true;
-      return visibleCapabilities.includes(cap);
-    });
-  }, [provider.capabilities, visibleCapabilities]);
-
-  const modelsByCapability: Record<string, ConfiguredModel[]> = {};
-  for (const cap of effectiveCapabilities) {
-    const mt = CAPABILITY_TO_MODEL_TYPE[cap];
-    if (!mt) continue;
-    modelsByCapability[cap] = configuredModels.filter(
-      (m) => m.modelType === mt && m.provider === provider.providerId
-    );
-  }
-
-  const totalConfigured = Object.values(modelsByCapability).reduce(
-    (sum, arr) => sum + arr.length,
-    0
-  );
-  const isConfigured = totalConfigured > 0;
+  const badgeCaps = provider.capabilities.filter((c) => isRegistryBadgeCapability(c));
 
   return (
     <Flex
-      direction="column"
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
+      direction={{ initial: 'column', sm: 'row' }}
+      align={{ initial: 'stretch', sm: 'center' }}
+      justify={{ initial: 'start', sm: 'between' }}
+      gap="4"
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
       style={{
         width: '100%',
-        backgroundColor: isHovered ? 'var(--olive-3)' : 'var(--olive-2)',
+        minWidth: 0,
+        minHeight: 88,
+        padding: '16px 20px',
+        backgroundColor: hover ? 'var(--olive-3)' : 'var(--olive-2)',
         border: '1px solid var(--olive-3)',
-        borderRadius: 'var(--radius-1)',
-        padding: 12,
-        gap: 16,
-        transition: 'background-color 150ms ease',
-      }}
-    >
-      {/* Top: icon + name + description */}
-      <Flex direction="column" gap="3" style={{ width: '100%', flex: 1 }}>
-        <Flex align="center" gap="3">
-          <Flex
-            align="center"
-            justify="center"
-            style={{
-              width: 32,
-              height: 32,
-              padding: 4,
-              backgroundColor: 'var(--gray-a2)',
-              borderRadius: 'var(--radius-1)',
-              flexShrink: 0,
-            }}
-          >
-            <img
-              src={provider.iconPath}
-              alt={provider.name}
-              style={{ width: 20, height: 20, objectFit: 'contain' }}
-            />
-          </Flex>
-          {provider.isPopular && (
-            <Text
-              size="1"
-              style={{
-                color: 'var(--accent-11)',
-                backgroundColor: 'var(--accent-3)',
-                padding: '1px 6px',
-                borderRadius: 'var(--radius-1)',
-                fontSize: 10,
-                fontWeight: 600,
-                flexShrink: 0,
-              }}
-            >
-              Popular
-            </Text>
-          )}
-        </Flex>
-
-        <Flex direction="column" gap="1" style={{ width: '100%' }}>
-          <Flex align="center" gap="2">
-            <Text size="2" weight="medium" style={{ color: 'var(--gray-12)' }}>
-              {provider.name}
-            </Text>
-            {totalConfigured > 0 && (
-              <Text
-                size="1"
-                style={{
-                  color: 'var(--green-a11)',
-                  backgroundColor: 'var(--green-a3)',
-                  padding: '0 6px',
-                  borderRadius: 'var(--radius-1)',
-                  fontSize: 10,
-                  fontWeight: 600,
-                  flexShrink: 0,
-                }}
-              >
-                {totalConfigured} configured
-              </Text>
-            )}
-          </Flex>
-          <Text
-            size="2"
-            style={{
-              color: 'var(--gray-11)',
-              display: '-webkit-box',
-              WebkitLineClamp: 2,
-              WebkitBoxOrient: 'vertical',
-              overflow: 'hidden',
-            }}
-          >
-            {provider.description}
-          </Text>
-        </Flex>
-
-        {!hideCapabilities && (
-          <Flex gap="2" wrap="wrap">
-            {effectiveCapabilities.map((cap) => {
-              const label = CAPABILITY_DISPLAY_NAMES[cap];
-              if (!label) return null;
-              const count = modelsByCapability[cap]?.length ?? 0;
-              return (
-                <Flex
-                  key={cap}
-                  align="center"
-                  gap="1"
-                  style={{
-                    padding: '2px 8px',
-                    borderRadius: 'var(--radius-1)',
-                    backgroundColor: count > 0 ? 'var(--green-a3)' : 'var(--gray-a3)',
-                    flexShrink: 0,
-                  }}
-                >
-                  <Text
-                    size="1"
-                    weight="medium"
-                    style={{
-                      color: count > 0 ? 'var(--green-a11)' : 'var(--gray-11)',
-                      whiteSpace: 'nowrap',
-                      fontSize: 11,
-                    }}
-                  >
-                    {label}{count > 0 ? ` (${count})` : ''}
-                  </Text>
-                </Flex>
-              );
-            })}
-          </Flex>
-        )}
-      </Flex>
-
-      {/* Bottom: configured instances OR setup buttons */}
-      {isConfigured ? (
-        <ConfiguredSection
-          provider={provider}
-          capabilities={effectiveCapabilities}
-          modelsByCapability={modelsByCapability}
-          hideCapabilities={hideCapabilities}
-          onAdd={onAdd}
-          onEdit={onEdit}
-          onSetDefault={onSetDefault}
-          onDelete={onDelete}
-        />
-      ) : (
-        <SetupButtons
-          provider={provider}
-          capabilities={effectiveCapabilities}
-          hideCapabilities={hideCapabilities}
-          onAdd={onAdd}
-        />
-      )}
-    </Flex>
-  );
-}
-
-// ========================================
-// Configured provider section — always shows instances
-// ========================================
-
-function ConfiguredSection({
-  provider,
-  capabilities,
-  modelsByCapability,
-  hideCapabilities,
-  onAdd,
-  onEdit,
-  onSetDefault,
-  onDelete,
-}: {
-  provider: AIModelProvider;
-  capabilities: string[];
-  modelsByCapability: Record<string, ConfiguredModel[]>;
-  hideCapabilities: boolean;
-  onAdd: (p: AIModelProvider, cap: string) => void;
-  onEdit: (p: AIModelProvider, cap: string, m: ConfiguredModel) => void;
-  onSetDefault: (mt: string, mk: string) => void;
-  onDelete: (mt: string, mk: string, name: string) => void;
-}) {
-  return (
-    <Flex direction="column" gap="2" style={{ width: '100%' }}>
-      {/* Model instances — always visible */}
-      {capabilities.map((cap) => {
-        const mt = CAPABILITY_TO_MODEL_TYPE[cap];
-        const models = modelsByCapability[cap] ?? [];
-        if (models.length === 0) return null;
-        const capLabel = hideCapabilities ? undefined : (CAPABILITY_DISPLAY_NAMES[cap] ?? cap);
-
-        return (
-          <Flex key={cap} direction="column" gap="1">
-            {models.map((model) => {
-              const modelName =
-                model.modelFriendlyName ||
-                (model.configuration?.model as string) ||
-                model.provider;
-
-              return (
-                <ModelRow
-                  key={model.modelKey}
-                  modelName={modelName}
-                  capLabel={capLabel}
-                  isDefault={model.isDefault}
-                  onEdit={(e) => {
-                    e.stopPropagation();
-                    onEdit(provider, cap, model);
-                  }}
-                  onSetDefault={(e) => {
-                    e.stopPropagation();
-                    if (mt) onSetDefault(mt, model.modelKey);
-                  }}
-                  onDelete={(e) => {
-                    e.stopPropagation();
-                    if (mt) onDelete(mt, model.modelKey, modelName);
-                  }}
-                />
-              );
-            })}
-          </Flex>
-        );
-      })}
-
-      {/* Add more buttons per capability */}
-      <Flex gap="2" style={{ width: '100%', marginTop: 2 }}>
-        {capabilities.map((cap) => {
-          const label = CAPABILITY_DISPLAY_NAMES[cap];
-          if (!label) return null;
-          const btnLabel = hideCapabilities ? '+ Add model' : `+ ${label}`;
-          return (
-            <SetupButton
-              key={cap}
-              label={btnLabel}
-              onClick={() => onAdd(provider, cap)}
-              flex
-            />
-          );
-        })}
-      </Flex>
-    </Flex>
-  );
-}
-
-// ========================================
-// Setup buttons — for unconfigured providers
-// ========================================
-
-function SetupButtons({
-  provider,
-  capabilities,
-  hideCapabilities,
-  onAdd,
-}: {
-  provider: AIModelProvider;
-  capabilities: string[];
-  hideCapabilities: boolean;
-  onAdd: (p: AIModelProvider, cap: string) => void;
-}) {
-  if (capabilities.length === 1) {
-    const cap = capabilities[0];
-    const label = CAPABILITY_DISPLAY_NAMES[cap] ?? cap;
-    const btnLabel = hideCapabilities ? '+ Add model' : `+ ${label}`;
-    return <SetupButton label={btnLabel} onClick={() => onAdd(provider, cap)} />;
-  }
-
-  return (
-    <Flex gap="2" style={{ width: '100%' }}>
-      {capabilities.map((cap) => {
-        const label = CAPABILITY_DISPLAY_NAMES[cap];
-        if (!label) return null;
-        const btnLabel = hideCapabilities ? '+ Add model' : `+ ${label}`;
-        return (
-          <SetupButton
-            key={cap}
-            label={btnLabel}
-            onClick={() => onAdd(provider, cap)}
-            flex
-          />
-        );
-      })}
-    </Flex>
-  );
-}
-
-function SetupButton({
-  label,
-  onClick,
-  flex,
-}: {
-  label: string;
-  onClick: () => void;
-  flex?: boolean;
-}) {
-  const [isHovered, setIsHovered] = useState(false);
-
-  return (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        onClick();
-      }}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      style={{
-        appearance: 'none',
-        margin: 0,
-        font: 'inherit',
-        outline: 'none',
-        border: 'none',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 4,
-        flex: flex ? 1 : undefined,
-        width: flex ? undefined : '100%',
-        height: 32,
         borderRadius: 'var(--radius-2)',
-        backgroundColor: isHovered ? 'var(--gray-a4)' : 'var(--gray-a3)',
-        cursor: 'pointer',
         transition: 'background-color 150ms ease',
+        boxSizing: 'border-box',
       }}
     >
-      <span
-        style={{
-          fontSize: 13,
-          fontWeight: 500,
-          lineHeight: '20px',
-          color: 'var(--gray-11)',
-          whiteSpace: 'nowrap',
-        }}
-      >
-        {label}
-      </span>
-    </button>
-  );
-}
-
-// ========================================
-// Model instance row
-// ========================================
-
-function ModelRow({
-  modelName,
-  capLabel,
-  isDefault,
-  onEdit,
-  onSetDefault,
-  onDelete,
-}: {
-  modelName: string;
-  capLabel?: string;
-  isDefault: boolean;
-  onEdit: (e: React.MouseEvent) => void;
-  onSetDefault: (e: React.MouseEvent) => void;
-  onDelete: (e: React.MouseEvent) => void;
-}) {
-  const [isHovered, setIsHovered] = useState(false);
-
-  return (
-    <Flex
-      align="center"
-      justify="between"
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      style={{
-        padding: '5px 8px',
-        borderRadius: 'var(--radius-1)',
-        backgroundColor: 'var(--gray-a2)',
-        transition: 'background-color 100ms ease',
-        minHeight: 32,
-      }}
-    >
-      <Flex align="center" gap="2" style={{ minWidth: 0, flex: 1 }}>
-        <Text
-          size="1"
-          weight="medium"
+      <Flex align="center" gap="4" style={{ minWidth: 0, flex: 1, width: '100%' }}>
+        <Flex
+          align="center"
+          justify="center"
           style={{
-            color: 'var(--gray-12)',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
+            width: 44,
+            height: 44,
+            padding: 6,
+            backgroundColor: 'var(--gray-a2)',
+            borderRadius: 'var(--radius-2)',
+            flexShrink: 0,
           }}
         >
-          {modelName}
-        </Text>
-        {capLabel ? (
-          <Text
-            size="1"
-            style={{
-              color: 'var(--gray-9)',
-              flexShrink: 0,
-              fontSize: 10,
-              backgroundColor: 'var(--gray-a3)',
-              padding: '0 4px',
-              borderRadius: 'var(--radius-1)',
-            }}
-          >
-            {capLabel}
-          </Text>
-        ) : null}
-        {isDefault && (
-          <Text
-            size="1"
-            style={{
-              color: 'var(--accent-11)',
-              backgroundColor: 'var(--accent-3)',
-              padding: '0 4px',
-              borderRadius: 'var(--radius-1)',
-              fontSize: 9,
-              fontWeight: 600,
-              flexShrink: 0,
-            }}
-          >
-            Default
-          </Text>
-        )}
+          <ThemeableAssetIcon
+            src={provider.iconPath}
+            size={28}
+            color="var(--gray-12)"
+            variant="flat"
+          />
+        </Flex>
+
+        <Flex direction="column" gap="2" style={{ minWidth: 0, flex: 1 }}>
+          <Flex direction="column" gap="0">
+            <Text size="3" weight="medium" style={{ color: 'var(--gray-12)' }}>
+              {provider.name}
+            </Text>
+            <Text size="1" style={{ color: 'var(--gray-10)' }}>
+              {t('workspace.aiModels.modelProviderKind')}
+            </Text>
+          </Flex>
+
+          <Flex gap="2" wrap="wrap" style={{ marginTop: 2 }}>
+            {badgeCaps.map((cap) => {
+              const label = aiModelsCapabilityBadge(t, cap);
+              if (!label) return null;
+              const st = BADGE_STYLE[cap] ?? DEFAULT_BADGE_STYLE;
+              return (
+                <span
+                  key={cap}
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 600,
+                    lineHeight: '18px',
+                    padding: '2px 10px',
+                    borderRadius: "2px",
+                    border: st.border,
+                    color: st.color,
+                    backgroundColor: st.bg,
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {label}
+                </span>
+              );
+            })}
+          </Flex>
+        </Flex>
       </Flex>
 
-      <Flex
-        align="center"
-        gap="0"
+      <button
+        type="button"
+        className={styles.configureButton}
+        onClick={(e) => {
+          e.stopPropagation();
+          onConfigure();
+        }}
         style={{
-          opacity: isHovered ? 1 : 0,
-          transition: 'opacity 150ms ease',
+          appearance: 'none',
+          margin: 0,
+          font: 'inherit',
           flexShrink: 0,
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 6,
+          padding: '8px 16px',
+          borderRadius: 'var(--radius-2)',
+          border: '1px solid var(--gray-a6)',
+          backgroundColor: 'var(--gray-a3)',
+          color: 'var(--gray-12)',
+          cursor: 'pointer',
+          fontSize: 13,
+          fontWeight: 500,
         }}
       >
-        <IconBtn icon="edit" title="Edit" onClick={onEdit} />
-        {!isDefault && <IconBtn icon="star_outline" title="Set default" onClick={onSetDefault} />}
-        <IconBtn icon="delete" title="Delete" onClick={onDelete} color="var(--red-9)" />
-      </Flex>
+        <MaterialIcon name="add" size={16} color="var(--gray-11)" />
+        {t('workspace.aiModels.configure')}
+      </button>
     </Flex>
-  );
-}
-
-function IconBtn({
-  icon,
-  title,
-  onClick,
-  color,
-}: {
-  icon: string;
-  title: string;
-  onClick: (e: React.MouseEvent) => void;
-  color?: string;
-}) {
-  return (
-    <button
-      type="button"
-      title={title}
-      onClick={onClick}
-      style={{
-        appearance: 'none',
-        margin: 0,
-        padding: 2,
-        border: 'none',
-        outline: 'none',
-        background: 'transparent',
-        cursor: 'pointer',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      <MaterialIcon name={icon} size={14} color={color ?? 'var(--gray-11)'} />
-    </button>
   );
 }

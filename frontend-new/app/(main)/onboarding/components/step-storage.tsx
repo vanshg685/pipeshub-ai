@@ -192,7 +192,7 @@ export function StepStorage({
       </Box>
 
       {/* Scrollable fields */}
-      <Box className="no-scrollbar" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '24px' }}>
+      <Box style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '24px' }}>
         <Flex direction="column" gap="6">
         <InfoBanner message="Choose your preferred storage solution. Local storage is used by default if skipped." />
 
